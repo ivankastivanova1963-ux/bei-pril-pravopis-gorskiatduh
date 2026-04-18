@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Магическият парк: БОС НИВО</title>
+    <style>
+        :root {
+            --park-green: #2E7D32;
+            --sky-blue: #87CEEB;
+            --magic-purple: #9C27B0;
+            --gold: #FFD700;
+            --boss-red: #B71C1C;
+        }
+
+        body, html {
+            margin: 0; padding: 0;
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--sky-blue);
+            overflow: hidden; user-select: none;
+            touch-action: manipulation;
+        }
+
+        #bg-canvas, #particle-canvas {
+            position: fixed; top: 0; left: 0; z-index: 1; pointer-events: none;
+        }
+
+        #game-container {
+            position: relative; width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center; z-index: 10;
+        }
+
+        .screen {
+            position: absolute; width: 90%; max-width: 600px;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 30px; border-radius: 40px;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.4);
+            text-align: center; display: none;
+            animation: bounceIn 0.5s ease;
+        }
+
+        .active { display: block; }
+        @keyframes bounceIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+        #hud {
+            position: fixed; top: 15px; left: 15px; right: 15px;
+            display: flex; justify-content: space-between; z-index: 20;
+        }
+
+        .stat-box {
+            background: white; padding: 8px 15px; border-radius: 20px;
+            border: 3px solid var(--park-green); font-weight: bold; font-size: 1.2rem;
+        }
+
+        button {
+            background: var(--park-green); color: white; border: none;
+            padding: 15px 25px; border-radius: 50px; font-size: 1.2rem;
+            cursor: pointer; margin: 8px; font-weight: bold; box-shadow: 0 5px 0 #1B5E20;
+            transition: 0.1s;
+        }
+        button:active { transform: translateY(3px); box-shadow: none; }
+        .btn-magic { background: var(--magic-purple); box-shadow: 0 5px 0 #4A148C; }
+        .btn-boss { background: var(--boss-red); box-shadow: 0 5px 0 #5f0c0c; animation: pulse 1s infinite; }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-15px); } 75% { transform: translateX(15px); } }
+
+        #boss-ui { display: none; margin-bottom: 20px; }
+        .boss-icon { font-size: 5rem; filter: drop-shadow(0 0 15px red); }
+        
+        #progress-bar { width: 100%; height: 18px; background: #eee; border-radius: 10px; margin-top: 20px; overflow: hidden; }
+        #progress-fill { width: 0%; height: 100%; background: #4CAF50; transition: 0.5s; }
+
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        #explanation { color: #d32f2f; font-weight: bold; margin-top: 15px; min-height: 1.5em; }
+    </style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<canvas id="particle-canvas"></canvas>
+
+<div id="hud">
+    <div class="stat-box">⭐ <span id="score-val">0</span></div>
+    <div id="lives-val" class="stat-box" style="color:red">❤️❤️❤️</div>
+    <div class="stat-box">⏱️ <span id="timer-val">0</span>с</div>
+</div>
+
+<div id="game-container">
+    <div id="start-screen" class="screen active">
+        <h1 style="color: var(--park-green);">🌳 Магическият Парк</h1>
+        <h3>БОС НИВО: Горският Дух</h3>
+        <p>Победете пазителя с правилните думи!</p>
+        <button onclick="startGame()">ЗАПОЧНИ ИГРА</button>
+    </div>
+
+    <div id="play-screen" class="screen">
+        <div id="boss-ui">
+            <div class="boss-icon">👺</div>
+            <div style="color:red; font-weight:bold;">БОС НИВО: ГОРСКИ ДУХ</div>
+        </div>
+        <div id="question-area" style="font-size:1.5rem; color:#333;"></div>
+        <div id="options-container" class="options-grid"></div>
+        <div id="explanation"></div>
+        <div id="progress-bar"><div id="progress-fill"></div></div>
+    </div>
+
+    <div id="end-screen" class="screen">
+        <h2 id="final-title">Край!</h2>
+        <p id="final-stat" style="font-size:1.5rem;"></p>
+        <button onclick="location.reload()">НОВА ИГРА</button>
+    </div>
+</div>
+
+<script>
+    // --- ДАННИ ---
+    const normalDB = [
+        { q: "Какво е по род 'умна'?", a: "женски", o: ["мъжки", "женски", "среден"] },
+        { q: "Кое е правилно за 'дете'?", a: "добро", o: ["добър", "добра", "добро"] },
+        { q: "Мн.ч. на 'зелена ливада'?", a: "зелени ливади", o: ["зелена ливади", "зелени ливада", "зелени ливади"] },
+        { q: "Кое е прилагателното в 'Слънчев ден'?", a: "Слънчев", o: ["Слънчев", "ден", "е"] },
+        { q: "Какво е по число 'високи'?", a: "множествено", o: ["единствено", "множествено"] }
+    ];
+
+    const bossDB = [
+        { q: "БОС: Променливо Я! 'бял' в мн.ч.?", a: "бели", o: ["бяли", "бели", "бяло"] },
+        { q: "БОС: 'голям' в мн.ч.?", a: "големи", o: ["голями", "големи", "голямо"] },
+        { q: "БОС: 'пясък' в мн.ч.?", a: "пясъци", o: ["пясъци", "песъци", "пясък"] },
+        { q: "БОС: 'железен' в мн.ч.?", a: "железни", o: ["железени", "железни", "желязни"] },
+        { q: "БОС: Изключение! 'брат' в мн.ч.?", a: "братя", o: ["брати", "братове", "братя"] }
+    ];
+
+    // --- СИСТЕМА ---
+    let score = 0, lives = 3, currentIdx = 0, timer = 0, timerInt, gameSet = [];
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playNote(f, t, d) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = t; o.frequency.setValueAtTime(f, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); o.stop(audioCtx.currentTime + d);
+    }
+
+    // --- ЛОГИКА ---
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+    }
+
+    function startGame() {
+        score = 0; lives = 3; currentIdx = 0; timer = 0;
+        // 5 обикновени + Босовете
+        gameSet = [...normalDB].sort(()=>Math.random()-0.5).slice(0,5).concat([...bossDB]);
+        updateHUD();
+        showScreen('play-screen');
+        nextQ();
+        if(timerInt) clearInterval(timerInt);
+        timerInt = setInterval(() => { timer++; document.getElementById('timer-val').innerText = timer; }, 1000);
+    }
+
+    function updateHUD() {
+        document.getElementById('score-val').innerText = score;
+        document.getElementById('lives-val').innerText = "❤️".repeat(lives);
+    }
+
+    function nextQ() {
+        if(currentIdx >= gameSet.length || lives <= 0) { endGame(); return; }
+        
+        const q = gameSet[currentIdx];
+        const isBoss = q.q.includes("БОС:");
+        
+        document.getElementById('boss-ui').style.display = isBoss ? 'block' : 'none';
+        document.getElementById('question-area').innerText = q.q;
+        document.getElementById('explanation').innerText = "";
+        
+        const cont = document.getElementById('options-container');
+        cont.innerHTML = "";
+        
+        q.o.sort(()=>Math.random()-0.5).forEach(opt => {
+            const b = document.createElement('button');
+            b.innerText = opt;
+            if(isBoss) b.className = 'btn-boss';
+            b.onclick = () => check(opt, q.a, b, isBoss);
+            cont.appendChild(b);
+        });
+        
+        document.getElementById('progress-fill').style.width = (currentIdx / gameSet.length) * 100 + "%";
+    }
+
+    function check(val, correct, btn, isBoss) {
+        if(val === correct) {
+            playNote(600, 'sine', 0.2);
+            score += isBoss ? 50 : 15;
+            currentIdx++;
+            updateHUD();
+            nextQ();
+        } else {
+            playNote(100, 'sawtooth', 0.3);
+            lives--;
+            btn.style.background = "red";
+            document.getElementById('play-screen').style.animation = 'shake 0.3s';
+            setTimeout(() => document.getElementById('play-screen').style.animation = '', 300);
+            document.getElementById('explanation').innerText = "Грешка! Опитай пак внимателно!";
+            updateHUD();
+            if(lives <= 0) setTimeout(endGame, 500);
+        }
+    }
+
+    function endGame() {
+        clearInterval(timerInt);
+        showScreen('end-screen');
+        const win = lives > 0;
+        document.getElementById('final-title').innerText = win ? "ПОБЕДА НАД ГОРСКИЯ ДУХ! 🏆" : "ГОРСКИЯТ ДУХ ПОБЕДИ... 👺";
+        document.getElementById('final-stat').innerText = `Точки: ${score} | Време: ${timer}с`;
+        
+        if(win && window.speechSynthesis) {
+            const m = new SpeechSynthesisUtterance("Браво! Ти победи пазителя на парка!");
+            m.lang = 'bg-BG'; window.speechSynthesis.speak(m);
+        }
+    }
+
+    // Рендериране на статичен фон за стабилност
+    const cvs = document.getElementById('bg-canvas');
+    const ctx = cvs.getContext('2d');
+    function draw() {
+        cvs.width = window.innerWidth; cvs.height = window.innerHeight;
+        ctx.fillStyle = '#87CEEB'; ctx.fillRect(0,0,cvs.width, cvs.height);
+        ctx.fillStyle = '#2E7D32'; ctx.fillRect(0, cvs.height*0.7, cvs.width, cvs.height*0.3);
+    }
+    window.onresize = draw; draw();
+</script>
+</body>
+</html>
